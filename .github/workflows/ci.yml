@@ -41,6 +41,7 @@ jobs:
           path: |
             output/playwright/packed-*/report.json
             output/playwright/packed-*/host-report.json
+            output/playwright/packed-*/search-report.json
             output/playwright/packed-*/lineage*-report.json
             output/playwright/packed-*/*.tgz
             output/playwright/packed-*/*.png

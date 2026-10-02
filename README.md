@@ -78,7 +78,7 @@ const document = parseGraphDocument(snapshot);
 </div>
 ```
 
-The package supports React 18 and 19. `Orrery` is an alias for the existing `GraphExplorer` component. `bun run build` creates JavaScript, declarations, and combined viewer styles. The preview is distributed as an installable GitHub release tarball; see the [exact install command](docs/migration.md). A registry publication is separate.
+The package supports React 18 and 19. `Orrery` is an alias for the existing `GraphExplorer` component. `bun run build` creates JavaScript, declarations, and combined viewer styles. Install the stable package from npm or use the matching GitHub release archive; see the [exact install commands](docs/migration.md).
 
 `GraphExplorer` accepts a `baseline` for snapshot comparison and controlled `location`/`onLocationChange` for host routing. Selection and exploration focus are independent. Custom cards, sizes, toolbar controls, and inspectors use the [React host API](docs/react-hosts.md), including a full navigation context whose `setLocation` replaces state. Optional revision choices come from the host; revision strings alone do not imply ancestry.
 
@@ -123,12 +123,16 @@ Graph JSON cannot verify itself. Receipt references contain no executable config
 
 ## Offline export
 
-After building and packing this repository, install the tarball in a Node 20+ project. The installed CLI uses bundled assets and needs no Bun or source checkout:
+Install the stable package in a Node 20+ project. The installed CLI uses bundled assets and needs no Bun or source checkout:
 
 ```sh
-npm install /path/to/axiom-foundation-orrery-0.5.0-preview.2.tgz
+npm install @axiom-foundation/orrery@0.6.0
 npx orrery --input graph.json --output report.html
 ```
+
+For an offline installation, download the matching
+`axiom-foundation-orrery-0.6.0.tgz` asset from the GitHub release and install
+that local archive instead.
 
 From the source checkout:
 

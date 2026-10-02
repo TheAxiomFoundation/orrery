@@ -6,6 +6,9 @@ An embeddable graph viewer for application dependencies, evidence, and agent-pro
 
 [Try the public preview](https://theaxiomfoundation.github.io/orrery/) · [Download a release](https://github.com/TheAxiomFoundation/orrery/releases) · [Migrate from graph-explorer](docs/migration.md)
 
+Maintainers can follow the [release procedure](docs/releasing.md) to build,
+publish, or verify an immutable package archive.
+
 The shared package owns navigation and presentation. Axiom, Microcosm, PlanGraph, and Thesis keep their own domain models, calculations, source authority, and adapters. Graphs can include cycles and multiple distinct relationships between the same records.
 
 The preview opens local graph JSON in your browser without uploading it. Explore

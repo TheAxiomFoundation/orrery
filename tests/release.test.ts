@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  changelogReleaseNotes,
+  planRelease,
   releaseMetadata,
+  validateChangelog,
   validatePackResult,
 } from '../scripts/release.js';
 
@@ -10,6 +13,7 @@ const packageJson = {
   files: [
     'dist',
     'README.md',
+    'CHANGELOG.md',
     'LICENSE',
     'THIRD_PARTY_NOTICES',
     'docs',
@@ -23,6 +27,7 @@ const packageJson = {
 const packedFiles = [
   'LICENSE',
   'README.md',
+  'CHANGELOG.md',
   'THIRD_PARTY_NOTICES',
   'package.json',
   'dist/cli.js',
@@ -59,6 +64,12 @@ describe('release metadata', () => {
     expect(() => releaseMetadata(packageJson, 'v0.6.1')).toThrow('must equal');
     expect(() =>
       releaseMetadata({ ...packageJson, version: '0.6.0+local' }, 'v0.6.0+local'),
+    ).toThrow('semantic version');
+    expect(() =>
+      releaseMetadata(
+        { ...packageJson, version: '0.6.0-preview.01' },
+        'v0.6.0-preview.01',
+      ),
     ).toThrow('semantic version');
     expect(() =>
       releaseMetadata(
@@ -141,5 +152,78 @@ describe('packed release validation', () => {
         },
       ]),
     ).toThrow('unsafe');
+  });
+});
+
+describe('release planning', () => {
+  test('selects the largest semantic-version increment required by fragments', () => {
+    expect(planRelease(packageJson, ['23.fixed.md'])).toMatchObject({
+      currentVersion: '0.6.0',
+      version: '0.6.1',
+      tag: 'v0.6.1',
+      increment: 'patch',
+    });
+    expect(
+      planRelease(packageJson, ['24.fixed.md', '25.added.md']),
+    ).toMatchObject({ version: '0.7.0', increment: 'minor' });
+    expect(
+      planRelease(packageJson, ['26.added.md', '27.breaking.md']),
+    ).toMatchObject({ version: '1.0.0', increment: 'major' });
+  });
+
+  test('sorts fragments and rejects missing, malformed, or prerelease input', () => {
+    expect(
+      planRelease(packageJson, ['z.fixed.md', 'a.changed.md']).fragments,
+    ).toEqual(['a.changed.md', 'z.fixed.md']);
+    expect(() => planRelease(packageJson, [])).toThrow('at least one');
+    expect(() => planRelease(packageJson, ['23.notes.md'])).toThrow(
+      'must end in',
+    );
+    expect(() =>
+      planRelease(
+        { ...packageJson, version: '0.7.0-preview.1' },
+        ['23.fixed.md'],
+      ),
+    ).toThrow('stable semantic version');
+  });
+});
+
+describe('compiled changelog validation', () => {
+  const changelog = `# Changelog
+
+## [0.6.0] - 2026-10-05
+
+### Added
+
+- Publish Orrery.
+`;
+
+  test('accepts a latest release matching the package version', () => {
+    expect(() => validateChangelog('0.6.0', changelog, [])).not.toThrow();
+    expect(changelogReleaseNotes('0.6.0', changelog)).toBe(
+      '### Added\n\n- Publish Orrery.\n',
+    );
+  });
+
+  test('rejects stale releases, missing headings, and pending fragments', () => {
+    expect(() => validateChangelog('0.6.1', changelog, [])).toThrow(
+      'must equal',
+    );
+    expect(() => validateChangelog('0.6.0', '# Changelog\n', [])).toThrow(
+      'dated release heading',
+    );
+    expect(() =>
+      validateChangelog('0.6.0', changelog, ['24.fixed.md']),
+    ).toThrow('pending changelog fragments');
+    expect(() => changelogReleaseNotes('0.6.1', changelog)).toThrow(
+      'cannot find',
+    );
+  });
+
+  test('extracts only the latest release for GitHub release notes', () => {
+    const withHistory = `${changelog}\n## [0.5.0] - 2026-01-01\n\nOld notes.\n`;
+    expect(changelogReleaseNotes('0.6.0', withHistory)).toBe(
+      '### Added\n\n- Publish Orrery.\n',
+    );
   });
 });

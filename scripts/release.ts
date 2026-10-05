@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,6 +6,7 @@ const PACKAGE_NAME = '@axiom-foundation/orrery';
 const REQUIRED_FILES = [
   'LICENSE',
   'README.md',
+  'CHANGELOG.md',
   'THIRD_PARTY_NOTICES',
   'package.json',
   'dist/cli.js',
@@ -17,6 +18,17 @@ const REQUIRED_FILES = [
 ] as const;
 const SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+const CHANGE_TYPES = [
+  'breaking',
+  'added',
+  'changed',
+  'fixed',
+  'removed',
+] as const;
+const CHANGELOG_HEADING = /^## \[([^\]]+)] - (\d{4}-\d{2}-\d{2})$/m;
+
+type ChangeType = (typeof CHANGE_TYPES)[number];
+export type VersionIncrement = 'major' | 'minor' | 'patch';
 
 export interface ReleaseMetadata {
   name: string;
@@ -30,6 +42,14 @@ export interface ReleaseMetadata {
 export interface ValidatedPackResult {
   integrity: string;
   files: string[];
+}
+
+export interface ReleasePlan {
+  currentVersion: string;
+  version: string;
+  tag: string;
+  increment: VersionIncrement;
+  fragments: string[];
 }
 
 type JsonObject = Record<string, unknown>;
@@ -56,6 +76,104 @@ function packageFileEntries(packageJson: JsonObject): string[] {
   return files.map((value, index) => text(value, `package.json files[${index}]`));
 }
 
+function changeType(path: string): ChangeType | undefined {
+  return CHANGE_TYPES.find(type => path.endsWith(`.${type}.md`));
+}
+
+function nextStableVersion(
+  version: string,
+  increment: VersionIncrement,
+): string {
+  const match = SEMVER.exec(version);
+  if (match === null || match[4] !== undefined) {
+    throw new Error(
+      `automated release preparation requires a stable semantic version, received ${version}`,
+    );
+  }
+  const major = BigInt(match[1]);
+  const minor = BigInt(match[2]);
+  const patch = BigInt(match[3]);
+  if (increment === 'major') return `${major + 1n}.0.0`;
+  if (increment === 'minor') return `${major}.${minor + 1n}.0`;
+  return `${major}.${minor}.${patch + 1n}`;
+}
+
+export function planRelease(
+  packageValue: unknown,
+  fragmentPaths: string[],
+): ReleasePlan {
+  const packageJson = object(packageValue, 'package.json');
+  const currentVersion = text(packageJson.version, 'package.json version');
+  const fragments = [...fragmentPaths].sort();
+  const types = fragments.map(path => {
+    const type = changeType(path);
+    if (type === undefined) {
+      throw new Error(
+        `changelog fragment ${path} must end in ${CHANGE_TYPES.map(value => `.${value}.md`).join(', ')}`,
+      );
+    }
+    return type;
+  });
+  if (types.length === 0) {
+    throw new Error('release preparation requires at least one changelog fragment');
+  }
+  const increment: VersionIncrement = types.includes('breaking')
+    ? 'major'
+    : types.includes('added') || types.includes('removed')
+      ? 'minor'
+      : 'patch';
+  const version = nextStableVersion(currentVersion, increment);
+  const tag = `v${version}`;
+  releaseMetadata({ ...packageJson, version }, tag);
+  return {
+    currentVersion,
+    version,
+    tag,
+    increment,
+    fragments,
+  };
+}
+
+export function validateChangelog(
+  version: string,
+  changelog: string,
+  fragmentPaths: string[],
+): void {
+  const heading = CHANGELOG_HEADING.exec(changelog);
+  if (heading === null) {
+    throw new Error('CHANGELOG.md must contain a dated release heading');
+  }
+  if (heading[1] !== version) {
+    throw new Error(
+      `latest CHANGELOG.md release ${heading[1]} must equal package version ${version}`,
+    );
+  }
+  if (fragmentPaths.length !== 0) {
+    throw new Error(
+      `release cannot contain pending changelog fragments: ${[...fragmentPaths].sort().join(', ')}`,
+    );
+  }
+}
+
+export function changelogReleaseNotes(
+  version: string,
+  changelog: string,
+): string {
+  const heading = CHANGELOG_HEADING.exec(changelog);
+  if (heading === null || heading[1] !== version) {
+    throw new Error(`cannot find latest changelog release ${version}`);
+  }
+  const bodyStart = heading.index + heading[0].length;
+  const nextHeading = /^## \[/gm;
+  nextHeading.lastIndex = bodyStart;
+  const next = nextHeading.exec(changelog);
+  const notes = changelog.slice(bodyStart, next?.index).trim();
+  if (notes.length === 0) {
+    throw new Error(`changelog release ${version} has no notes`);
+  }
+  return `${notes}\n`;
+}
+
 function assetName(name: string, version: string): string {
   return `${name.replace(/^@/, '').replaceAll('/', '-')}-${version}.tgz`;
 }
@@ -72,6 +190,18 @@ export function releaseMetadata(
   }
   const match = SEMVER.exec(version);
   if (match === null) {
+    throw new Error(`package version ${version} must be a semantic version`);
+  }
+  if (
+    match[4]
+      ?.split('.')
+      .some(
+        identifier =>
+          /^\d+$/.test(identifier) &&
+          identifier.length > 1 &&
+          identifier.startsWith('0'),
+      )
+  ) {
     throw new Error(`package version ${version} must be a semantic version`);
   }
   const expectedTag = `v${version}`;
@@ -179,15 +309,60 @@ async function readJson(path: string, label: string): Promise<unknown> {
   }
 }
 
+async function changelogFragments(directory: string): Promise<string[]> {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    throw new Error(`cannot read changelog fragment directory ${directory}`, {
+      cause: error,
+    });
+  }
+  return entries
+    .filter(entry => entry.isFile() && entry.name !== '.gitkeep')
+    .map(entry => entry.name)
+    .sort();
+}
+
 async function main(args: string[]): Promise<void> {
   const command = args[0];
   const root = fileURLToPath(new URL('../', import.meta.url));
   const packagePath = option(args, '--package') ?? `${root}package.json`;
+  const packageJson = await readJson(packagePath, 'package.json');
+  const fragmentDirectory =
+    option(args, '--fragments') ?? `${root}changelog.d`;
+  if (command === 'plan') {
+    const plan = planRelease(
+      packageJson,
+      await changelogFragments(fragmentDirectory),
+    );
+    if (args.includes('--write')) {
+      const packageObject = object(packageJson, 'package.json');
+      packageObject.version = plan.version;
+      await writeFile(packagePath, `${JSON.stringify(packageObject, null, 2)}\n`);
+    }
+    process.stdout.write(`${JSON.stringify(plan)}\n`);
+    return;
+  }
   const tag = option(args, '--tag');
   if (tag === undefined) throw new Error('--tag is required');
-  const packageJson = await readJson(packagePath, 'package.json');
   const metadata = releaseMetadata(packageJson, tag);
   if (command === 'metadata') {
+    process.stdout.write(`${JSON.stringify(metadata)}\n`);
+    return;
+  }
+  if (command === 'validate-changelog' || command === 'notes') {
+    const changelogPath = option(args, '--changelog') ?? `${root}CHANGELOG.md`;
+    const changelog = await readFile(changelogPath, 'utf8');
+    validateChangelog(
+      metadata.version,
+      changelog,
+      await changelogFragments(fragmentDirectory),
+    );
+    if (command === 'notes') {
+      process.stdout.write(changelogReleaseNotes(metadata.version, changelog));
+      return;
+    }
     process.stdout.write(`${JSON.stringify(metadata)}\n`);
     return;
   }
@@ -200,7 +375,9 @@ async function main(args: string[]): Promise<void> {
     );
     return;
   }
-  throw new Error('command must be metadata or validate-pack');
+  throw new Error(
+    'command must be metadata, plan, notes, validate-changelog, or validate-pack',
+  );
 }
 
 if (import.meta.main) {

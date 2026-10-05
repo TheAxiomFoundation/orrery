@@ -1,0 +1,105 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the default branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Run this workflow from main." >&2
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: '0.12.23'
+          enable-cache: false
+      - name: Resolve the next version and compile the changelog
+        id: release
+        run: |
+          metadata=$(bun scripts/release.ts plan --write)
+          version=$(jq --raw-output .version <<<"$metadata")
+          tag=$(jq --raw-output .tag <<<"$metadata")
+          increment=$(jq --raw-output .increment <<<"$metadata")
+          uvx --from towncrier==26.9.0 towncrier build \
+            --yes \
+            --version "$version"
+          bun scripts/release.ts validate-changelog --tag "$tag" > /dev/null
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "increment=$increment"
+          } >> "$GITHUB_OUTPUT"
+      - name: Create the release branch and commit
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          branch="release/$RELEASE_TAG"
+          ref="refs/heads/$branch"
+          git ls-remote --heads origin > all-remote-branches.txt
+          listed=$(awk -v ref="$ref" '$2 == ref { print $1 }' all-remote-branches.txt)
+
+          set +e
+          direct=$(git ls-remote --exit-code --heads origin "$ref")
+          direct_status=$?
+          set -e
+
+          if [ "$direct_status" -eq 0 ]; then
+            direct_commit=$(awk '{ print $1 }' <<<"$direct")
+            if [ "$listed" != "$direct_commit" ]; then
+              echo "Remote branch list and exact branch lookup disagree." >&2
+              exit 1
+            fi
+            echo "Remote branch $branch already exists." >&2
+            exit 1
+          fi
+          if [ "$direct_status" -ne 2 ]; then
+            echo "Exact remote branch lookup failed." >&2
+            exit 1
+          fi
+          if [ -n "$listed" ]; then
+            echo "Remote branch list and exact branch lookup disagree." >&2
+            exit 1
+          fi
+          git switch --create "$branch"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all -- package.json CHANGELOG.md changelog.d
+          git diff --cached --check
+          git commit --message "Prepare Orrery $RELEASE_VERSION"
+          git push --set-upstream origin "$branch"
+      - name: Open the release pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_INCREMENT: ${{ steps.release.outputs.increment }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "release/$RELEASE_TAG" \
+            --title "Prepare Orrery $RELEASE_VERSION" \
+            --body "Towncrier compiled the pending changelog fragments and applied the inferred $RELEASE_INCREMENT version increment. After this pull request merges and CI succeeds, run the Release workflow in publish mode. That workflow will create $RELEASE_TAG at the reviewed main commit before publishing the npm package and GitHub release."
+          gh workflow run ci.yml --ref "release/$RELEASE_TAG"

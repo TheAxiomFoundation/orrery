@@ -28,6 +28,7 @@ jobs:
           version: '0.12.23'
           enable-cache: false
       - run: bun install --frozen-lockfile
+      - run: .github/scripts/ci/validate-workflows.sh
       - name: Render the pending changelog without modifying files
         run: uvx --from towncrier==26.9.0 towncrier build --draft --version 0.0.0
       - name: Validate the changelog contribution on pull requests
@@ -35,20 +36,10 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
           HEAD_REF: ${{ github.head_ref }}
-        run: |
-          base="origin/$BASE_REF"
-          if git cat-file -e "$base:CHANGELOG.md" 2> /dev/null && \
-             [[ "$HEAD_REF" != release/v* ]] && \
-             git diff --name-only "$base"...HEAD | grep --fixed-strings --line-regexp --quiet CHANGELOG.md; then
-            echo "Ordinary pull requests must add changelog.d fragments instead of editing CHANGELOG.md." >&2
-            exit 1
-          fi
-          uvx --from towncrier==26.9.0 towncrier check --compare-with "$base"
+        run: .github/scripts/ci/validate-changelog.sh
       - name: Validate a compiled release changelog
         if: startsWith(github.ref, 'refs/heads/release/v') || startsWith(github.head_ref, 'release/v')
-        run: |
-          tag="v$(node --print "require('./package.json').version")"
-          bun scripts/release.ts validate-changelog --tag "$tag" > /dev/null
+        run: .github/scripts/ci/validate-release-changelog.sh
       - run: bun run typecheck
       - run: bun test
       - run: python3 -m unittest discover -s tests -p '*_test.py'

@@ -46,39 +46,12 @@ jobs:
           GIT_REF: ${{ github.ref }}
           REF_NAME: ${{ github.ref_name }}
           REQUESTED_PUBLISH: ${{ inputs.publish }}
-        run: |
-          if [ "$EVENT_NAME" = "push" ]; then
-            tag="$REF_NAME"
-            publish=true
-          else
-            tag="v$(node --print "require('./package.json').version")"
-            publish="$REQUESTED_PUBLISH"
-          fi
-          if [ "$publish" = true ] && [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$GIT_REF" != "refs/heads/main" ]; then
-            echo "Publishing requires a workflow run from main." >&2
-            exit 1
-          fi
-          metadata=$(bun scripts/release.ts validate-changelog --tag "$tag")
-          {
-            echo "tag=$(jq --raw-output .tag <<<"$metadata")"
-            echo "name=$(jq --raw-output .name <<<"$metadata")"
-            echo "version=$(jq --raw-output .version <<<"$metadata")"
-            echo "npm_tag=$(jq --raw-output .npmTag <<<"$metadata")"
-            echo "prerelease=$(jq --raw-output .prerelease <<<"$metadata")"
-            echo "asset=$(jq --raw-output .assetName <<<"$metadata")"
-            echo "publish=$publish"
-          } >> "$GITHUB_OUTPUT"
+        run: .github/scripts/release/resolve.sh
       - name: Require a publishable commit from main
         if: steps.release.outputs.publish == 'true'
         env:
           EVENT_NAME: ${{ github.event_name }}
-        run: |
-          git fetch origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]; then
-            echo "Manual publication must use the current main commit." >&2
-            exit 1
-          fi
+        run: .github/scripts/release/require-main-commit.sh
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
@@ -89,14 +62,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_ASSET: ${{ steps.release.outputs.asset }}
-        run: |
-          mkdir release
-          npm pack --json --pack-destination release > release/pack.json
-          bun scripts/release.ts validate-pack \
-            --tag "$RELEASE_TAG" \
-            --pack-json release/pack.json > release/validated.json
-          cd release
-          sha256sum "$RELEASE_ASSET" > SHA256SUMS
+        run: .github/scripts/release/pack.sh
       - uses: actions/upload-artifact@v7
         with:
           name: orrery-${{ steps.release.outputs.version }}
@@ -105,77 +71,12 @@ jobs:
             release/SHA256SUMS
           if-no-files-found: error
       - name: Create or verify the annotated version tag
-        if: steps.release.outputs.publish == 'true' && github.event_name == 'workflow_dispatch'
-        env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          ref="refs/tags/$RELEASE_TAG"
-          git ls-remote --tags origin > all-remote-tags.txt
-          listed=$(awk -v ref="$ref" '$2 == ref { print $1 }' all-remote-tags.txt)
-
-          set +e
-          direct=$(git ls-remote --exit-code --refs origin "$ref")
-          direct_status=$?
-          set -e
-
-          if [ "$direct_status" -eq 0 ]; then
-            direct_object=$(awk '{ print $1 }' <<<"$direct")
-            if [ "$listed" != "$direct_object" ]; then
-              echo "Remote tag list and exact tag lookup disagree." >&2
-              exit 1
-            fi
-            git fetch --force origin "$ref:$ref"
-            if [ "$(git rev-list --max-count=1 "$RELEASE_TAG")" != "$GITHUB_SHA" ]; then
-              echo "Existing tag $RELEASE_TAG points to a different commit." >&2
-              exit 1
-            fi
-          else
-            if [ "$direct_status" -ne 2 ]; then
-              echo "Exact remote tag lookup failed." >&2
-              exit 1
-            fi
-            if [ -n "$listed" ]; then
-              echo "Remote tag list and exact tag lookup disagree." >&2
-              exit 1
-            fi
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag --annotate "$RELEASE_TAG" --message "Orrery $RELEASE_VERSION"
-            git push origin "$ref"
-          fi
-      - name: Verify the remote annotated version tag
         if: steps.release.outputs.publish == 'true'
         env:
+          EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          ref="refs/tags/$RELEASE_TAG"
-          git ls-remote --tags origin > all-published-tags.txt
-          listed=$(awk -v ref="$ref" '$2 == ref { print $1 }' all-published-tags.txt)
-
-          set +e
-          direct=$(git ls-remote --exit-code --refs origin "$ref")
-          direct_status=$?
-          set -e
-
-          if [ "$direct_status" -ne 0 ]; then
-            echo "Remote tag $RELEASE_TAG is missing." >&2
-            exit 1
-          fi
-          direct_object=$(awk '{ print $1 }' <<<"$direct")
-          if [ "$listed" != "$direct_object" ]; then
-            echo "Remote tag list and exact tag lookup disagree." >&2
-            exit 1
-          fi
-          git fetch --force origin "$ref:$ref"
-          if [ "$(git cat-file -t "$RELEASE_TAG")" != tag ]; then
-            echo "Remote tag $RELEASE_TAG must be annotated." >&2
-            exit 1
-          fi
-          if [ "$(git rev-list --max-count=1 "$RELEASE_TAG")" != "$GITHUB_SHA" ]; then
-            echo "Remote tag $RELEASE_TAG points to a different commit." >&2
-            exit 1
-          fi
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: .github/scripts/release/tag.sh
       - name: Publish or verify the npm package
         if: steps.release.outputs.publish == 'true'
         env:
@@ -183,49 +84,7 @@ jobs:
           PACKAGE_VERSION: ${{ steps.release.outputs.version }}
           NPM_TAG: ${{ steps.release.outputs.npm_tag }}
           RELEASE_ASSET: ${{ steps.release.outputs.asset }}
-        run: |
-          set +e
-          npm view "$PACKAGE_NAME" versions --json > registry-versions.json 2> registry-list.error
-          list_status=$?
-          npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.integrity --json > registry-version.json 2> registry-direct.error
-          direct_status=$?
-          set -e
-
-          listed=false
-          if [ "$list_status" -eq 0 ]; then
-            listed=$(jq --arg version "$PACKAGE_VERSION" \
-              'if type == "array" then index($version) != null else . == $version end' \
-              registry-versions.json)
-          elif ! grep --quiet 'E404' registry-list.error; then
-            cat registry-list.error
-            exit 1
-          fi
-
-          if [ "$direct_status" -eq 0 ]; then
-            if [ "$listed" != true ]; then
-              echo "npm list and exact-version lookup disagree" >&2
-              exit 1
-            fi
-            published_integrity=$(jq --raw-output . registry-version.json)
-            local_integrity=$(jq --raw-output .integrity release/validated.json)
-            if [ "$published_integrity" != "$local_integrity" ]; then
-              echo "published npm archive differs from the locally built archive" >&2
-              exit 1
-            fi
-          else
-            if ! grep --quiet 'E404' registry-direct.error; then
-              cat registry-direct.error
-              exit 1
-            fi
-            if [ "$listed" = true ]; then
-              echo "npm list and exact-version lookup disagree" >&2
-              exit 1
-            fi
-            npm publish "release/$RELEASE_ASSET" \
-              --access public \
-              --tag "$NPM_TAG" \
-              --provenance
-          fi
+        run: .github/scripts/release/publish-npm.sh
       - name: Create or verify the GitHub release
         if: steps.release.outputs.publish == 'true'
         env:
@@ -234,64 +93,4 @@ jobs:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
           RELEASE_ASSET: ${{ steps.release.outputs.asset }}
           PRERELEASE: ${{ steps.release.outputs.prerelease }}
-        run: |
-          bun scripts/release.ts notes --tag "$RELEASE_TAG" > release/RELEASE_NOTES.md
-          gh api --paginate --slurp \
-            "repos/$GITHUB_REPOSITORY/releases?per_page=100" > all-release-pages.json
-          listed_id=$(jq --raw-output --arg tag "$RELEASE_TAG" \
-            '[.[][] | select(.tag_name == $tag) | .id] | if length == 0 then "" elif length == 1 then .[0] else error("duplicate release tags") end' \
-            all-release-pages.json)
-
-          set +e
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > exact-release.json 2> exact-release.error
-          direct_status=$?
-          set -e
-
-          if [ "$direct_status" -eq 0 ]; then
-            direct_id=$(jq --raw-output .id exact-release.json)
-            if [ "$listed_id" != "$direct_id" ]; then
-              echo "GitHub release list and exact-tag lookup disagree" >&2
-              exit 1
-            fi
-            actual_prerelease=$(jq --raw-output .prerelease exact-release.json)
-            if [ "$actual_prerelease" != "$PRERELEASE" ]; then
-              echo "existing GitHub release has the wrong prerelease status" >&2
-              exit 1
-            fi
-            actual_notes=$(jq --raw-output .body exact-release.json)
-            expected_notes=$(cat release/RELEASE_NOTES.md)
-            if [ "$actual_notes" != "$expected_notes" ]; then
-              echo "existing GitHub release notes differ from CHANGELOG.md" >&2
-              exit 1
-            fi
-            archive_sha=$(sha256sum "release/$RELEASE_ASSET" | cut -d' ' -f1)
-            sums_sha=$(sha256sum release/SHA256SUMS | cut -d' ' -f1)
-            jq --exit-status \
-              --arg archive "$RELEASE_ASSET" \
-              --arg archive_digest "sha256:$archive_sha" \
-              --arg sums_digest "sha256:$sums_sha" \
-              '(.assets | map(select(.name == $archive and .digest == $archive_digest)) | length == 1) and
-               (.assets | map(select(.name == "SHA256SUMS" and .digest == $sums_digest)) | length == 1)' \
-              exact-release.json > /dev/null
-          else
-            if [ -n "$listed_id" ]; then
-              echo "GitHub release list and exact-tag lookup disagree" >&2
-              exit 1
-            fi
-            if ! grep --quiet 'HTTP 404' exact-release.error; then
-              cat exact-release.error
-              exit 1
-            fi
-            args=(
-              "$RELEASE_TAG"
-              "release/$RELEASE_ASSET"
-              "release/SHA256SUMS"
-              --title "Orrery $RELEASE_VERSION"
-              --notes-file release/RELEASE_NOTES.md
-              --verify-tag
-            )
-            if [ "$PRERELEASE" = true ]; then
-              args+=(--prerelease)
-            fi
-            gh release create "${args[@]}"
-          fi
+        run: .github/scripts/release/publish-github.sh

@@ -1,10 +1,9 @@
 # Releasing Orrery
 
 Orrery releases use one version for the Git tag, npm package, and GitHub
-release. A stable `package.json` version such as `0.6.0` uses tag `v0.6.0` and
-the npm `latest` distribution tag. A semantic prerelease such as
-`0.7.0-preview.1` uses tag `v0.7.0-preview.1` and the npm `preview`
-distribution tag.
+release. A stable `package.json` version uses a matching `v`-prefixed tag and
+the npm `latest` distribution tag. A semantic prerelease uses its matching
+`v`-prefixed tag and the npm `preview` distribution tag.
 
 ## Changelog fragments
 
@@ -69,8 +68,8 @@ For the first npm publication only:
    `TheAxiomFoundation/orrery`, workflow `release.yml`, environment empty.
 5. Remove any temporary npm automation token used during setup.
 6. Run the Release workflow again from `main` with **publish** enabled. It
-   creates the tag, verifies that npm contains the same archive, and creates
-   the GitHub release.
+   creates the matching version tag, verifies that npm contains the same
+   archive, and creates the GitHub release.
 
 Publication uses npm trusted publishing with provenance. If that exact npm
 version already exists, the workflow compares the registry integrity value

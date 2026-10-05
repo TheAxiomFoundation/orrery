@@ -8,15 +8,15 @@ The package name is `@axiom-foundation/orrery`; the primary command is `orrery`.
 Install the stable package from npm:
 
 ```sh
-npm install @axiom-foundation/orrery@0.6.0
+npm install @axiom-foundation/orrery
 npx orrery --input graph.json --output report.html
 ```
 
 For an offline installation, use the archive attached to the matching
-[GitHub release](https://github.com/TheAxiomFoundation/orrery/releases/tag/v0.6.0):
+[GitHub release](https://github.com/TheAxiomFoundation/orrery/releases):
 
 ```sh
-npm install /path/to/axiom-foundation-orrery-0.6.0.tgz
+npm install /path/to/axiom-foundation-orrery-VERSION.tgz
 ```
 
 ## React
@@ -42,7 +42,7 @@ the new archive explicitly:
 ```json
 {
   "dependencies": {
-    "@axiom-foundation/graph-explorer": "npm:@axiom-foundation/orrery@0.6.0"
+    "@axiom-foundation/graph-explorer": "npm:@axiom-foundation/orrery@latest"
   }
 }
 ```
@@ -57,5 +57,5 @@ Keep `graph-explorer/v1`, `graph-explorer/receipt-binding/v1` and
 bindings and offline reports remain valid. The embedded `graph-explorer-data`
 element remains supported. Historical archives and their digests are immutable.
 
-Version 0.6.0 uses the MIT license. Earlier archives retain their original
-license; bundled dependency notices are preserved independently.
+Orrery uses the MIT license. Historical archives retain their original license;
+bundled dependency notices are preserved independently.

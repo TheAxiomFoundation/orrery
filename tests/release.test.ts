@@ -7,9 +7,13 @@ import {
   validatePackResult,
 } from '../scripts/release.js';
 
+const STABLE_VERSION = '1.2.3';
+const STABLE_TAG = `v${STABLE_VERSION}`;
+const STABLE_ASSET = `axiom-foundation-orrery-${STABLE_VERSION}.tgz`;
+
 const packageJson = {
   name: '@axiom-foundation/orrery',
-  version: '0.6.0',
+  version: STABLE_VERSION,
   files: [
     'dist',
     'README.md',
@@ -41,40 +45,40 @@ const packedFiles = [
 
 describe('release metadata', () => {
   test('accepts an exact stable version tag', () => {
-    expect(releaseMetadata(packageJson, 'v0.6.0')).toEqual({
+    expect(releaseMetadata(packageJson, STABLE_TAG)).toEqual({
       name: '@axiom-foundation/orrery',
-      version: '0.6.0',
-      tag: 'v0.6.0',
+      version: STABLE_VERSION,
+      tag: STABLE_TAG,
       npmTag: 'latest',
       prerelease: false,
-      assetName: 'axiom-foundation-orrery-0.6.0.tgz',
+      assetName: STABLE_ASSET,
     });
   });
 
   test('routes semantic prereleases to the preview distribution tag', () => {
-    const prerelease = { ...packageJson, version: '0.7.0-preview.2' };
-    expect(releaseMetadata(prerelease, 'v0.7.0-preview.2')).toMatchObject({
+    const prerelease = { ...packageJson, version: '2.0.0-preview.2' };
+    expect(releaseMetadata(prerelease, 'v2.0.0-preview.2')).toMatchObject({
       npmTag: 'preview',
       prerelease: true,
-      assetName: 'axiom-foundation-orrery-0.7.0-preview.2.tgz',
+      assetName: 'axiom-foundation-orrery-2.0.0-preview.2.tgz',
     });
   });
 
   test('rejects mismatched tags, build metadata, and private publication', () => {
-    expect(() => releaseMetadata(packageJson, 'v0.6.1')).toThrow('must equal');
+    expect(() => releaseMetadata(packageJson, 'v1.2.4')).toThrow('must equal');
     expect(() =>
-      releaseMetadata({ ...packageJson, version: '0.6.0+local' }, 'v0.6.0+local'),
+      releaseMetadata({ ...packageJson, version: '1.2.3+local' }, 'v1.2.3+local'),
     ).toThrow('semantic version');
     expect(() =>
       releaseMetadata(
-        { ...packageJson, version: '0.6.0-preview.01' },
-        'v0.6.0-preview.01',
+        { ...packageJson, version: '1.2.3-preview.01' },
+        'v1.2.3-preview.01',
       ),
     ).toThrow('semantic version');
     expect(() =>
       releaseMetadata(
         { ...packageJson, publishConfig: { access: 'restricted' } },
-        'v0.6.0',
+        STABLE_TAG,
       ),
     ).toThrow('public');
   });
@@ -82,12 +86,12 @@ describe('release metadata', () => {
 
 describe('packed release validation', () => {
   test('accepts one exact public package with required distribution files', () => {
-    const metadata = releaseMetadata(packageJson, 'v0.6.0');
+    const metadata = releaseMetadata(packageJson, STABLE_TAG);
     const result = validatePackResult(packageJson, metadata, [
       {
-        id: '@axiom-foundation/orrery@0.6.0',
+        id: `@axiom-foundation/orrery@${STABLE_VERSION}`,
         name: '@axiom-foundation/orrery',
-        version: '0.6.0',
+        version: STABLE_VERSION,
         filename: metadata.assetName,
         integrity: 'sha512-deadbeef',
         files: packedFiles.map(path => ({ path })),
@@ -98,11 +102,11 @@ describe('packed release validation', () => {
   });
 
   test('rejects missing distribution files and paths outside package files', () => {
-    const metadata = releaseMetadata(packageJson, 'v0.6.0');
+    const metadata = releaseMetadata(packageJson, STABLE_TAG);
     const packed = {
-      id: '@axiom-foundation/orrery@0.6.0',
+      id: `@axiom-foundation/orrery@${STABLE_VERSION}`,
       name: '@axiom-foundation/orrery',
-      version: '0.6.0',
+      version: STABLE_VERSION,
       filename: metadata.assetName,
       integrity: 'sha512-deadbeef',
       files: packedFiles.map(path => ({ path })),
@@ -125,16 +129,16 @@ describe('packed release validation', () => {
   });
 
   test('rejects multiple packages, wrong identities, and unsafe paths', () => {
-    const metadata = releaseMetadata(packageJson, 'v0.6.0');
+    const metadata = releaseMetadata(packageJson, STABLE_TAG);
     expect(() => validatePackResult(packageJson, metadata, [])).toThrow('one');
     expect(() => validatePackResult(packageJson, metadata, [{}, {}])).toThrow(
       'one',
     );
 
     const base = {
-      id: '@axiom-foundation/other@0.6.0',
+      id: `@axiom-foundation/other@${STABLE_VERSION}`,
       name: '@axiom-foundation/other',
-      version: '0.6.0',
+      version: STABLE_VERSION,
       filename: metadata.assetName,
       integrity: 'sha512-deadbeef',
       files: packedFiles.map(path => ({ path })),
@@ -146,7 +150,7 @@ describe('packed release validation', () => {
       validatePackResult(packageJson, metadata, [
         {
           ...base,
-          id: '@axiom-foundation/orrery@0.6.0',
+          id: `@axiom-foundation/orrery@${STABLE_VERSION}`,
           name: '@axiom-foundation/orrery',
           files: [...base.files, { path: '../secret' }],
         },
@@ -158,17 +162,17 @@ describe('packed release validation', () => {
 describe('release planning', () => {
   test('selects the largest semantic-version increment required by fragments', () => {
     expect(planRelease(packageJson, ['23.fixed.md'])).toMatchObject({
-      currentVersion: '0.6.0',
-      version: '0.6.1',
-      tag: 'v0.6.1',
+      currentVersion: STABLE_VERSION,
+      version: '1.2.4',
+      tag: 'v1.2.4',
       increment: 'patch',
     });
     expect(
       planRelease(packageJson, ['24.fixed.md', '25.added.md']),
-    ).toMatchObject({ version: '0.7.0', increment: 'minor' });
+    ).toMatchObject({ version: '1.3.0', increment: 'minor' });
     expect(
       planRelease(packageJson, ['26.added.md', '27.breaking.md']),
-    ).toMatchObject({ version: '1.0.0', increment: 'major' });
+    ).toMatchObject({ version: '2.0.0', increment: 'major' });
   });
 
   test('sorts fragments and rejects missing, malformed, or prerelease input', () => {
@@ -181,7 +185,7 @@ describe('release planning', () => {
     );
     expect(() =>
       planRelease(
-        { ...packageJson, version: '0.7.0-preview.1' },
+        { ...packageJson, version: '2.0.0-preview.1' },
         ['23.fixed.md'],
       ),
     ).toThrow('stable semantic version');
@@ -191,7 +195,7 @@ describe('release planning', () => {
 describe('compiled changelog validation', () => {
   const changelog = `# Changelog
 
-## [0.6.0] - 2026-10-05
+## [${STABLE_VERSION}] - 2026-10-05
 
 ### Added
 
@@ -199,21 +203,21 @@ describe('compiled changelog validation', () => {
 `;
 
   test('accepts a latest release matching the package version', () => {
-    expect(() => validateChangelog('0.6.0', changelog, [])).not.toThrow();
-    expect(changelogReleaseNotes('0.6.0', changelog)).toBe(
+    expect(() => validateChangelog(STABLE_VERSION, changelog, [])).not.toThrow();
+    expect(changelogReleaseNotes(STABLE_VERSION, changelog)).toBe(
       '### Added\n\n- Publish Orrery.\n',
     );
   });
 
   test('rejects stale releases, missing headings, and pending fragments', () => {
-    expect(() => validateChangelog('0.6.1', changelog, [])).toThrow(
+    expect(() => validateChangelog('1.2.4', changelog, [])).toThrow(
       'must equal',
     );
-    expect(() => validateChangelog('0.6.0', '# Changelog\n', [])).toThrow(
+    expect(() => validateChangelog(STABLE_VERSION, '# Changelog\n', [])).toThrow(
       'dated release heading',
     );
     expect(() =>
-      validateChangelog('0.6.0', changelog, ['24.fixed.md']),
+      validateChangelog(STABLE_VERSION, changelog, ['24.fixed.md']),
     ).toThrow('pending changelog fragments');
     expect(() => changelogReleaseNotes('0.6.1', changelog)).toThrow(
       'cannot find',
@@ -221,8 +225,8 @@ describe('compiled changelog validation', () => {
   });
 
   test('extracts only the latest release for GitHub release notes', () => {
-    const withHistory = `${changelog}\n## [0.5.0] - 2026-01-01\n\nOld notes.\n`;
-    expect(changelogReleaseNotes('0.6.0', withHistory)).toBe(
+    const withHistory = `${changelog}\n## [1.2.2] - 2026-01-01\n\nOld notes.\n`;
+    expect(changelogReleaseNotes(STABLE_VERSION, withHistory)).toBe(
       '### Added\n\n- Publish Orrery.\n',
     );
   });

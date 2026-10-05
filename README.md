@@ -129,12 +129,12 @@ Graph JSON cannot verify itself. Receipt references contain no executable config
 Install the stable package in a Node 20+ project. The installed CLI uses bundled assets and needs no Bun or source checkout:
 
 ```sh
-npm install @axiom-foundation/orrery@0.6.0
+npm install @axiom-foundation/orrery
 npx orrery --input graph.json --output report.html
 ```
 
 For an offline installation, download the matching
-`axiom-foundation-orrery-0.6.0.tgz` asset from the GitHub release and install
+`axiom-foundation-orrery-VERSION.tgz` asset from the GitHub release and install
 that local archive instead.
 
 From the source checkout:

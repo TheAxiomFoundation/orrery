@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${EVENT_NAME:?EVENT_NAME is required}"
-: "${GITHUB_SHA:?GITHUB_SHA is required}"
+: "${EXPECTED_SHA:?EXPECTED_SHA is required}"
 : "${RELEASE_TAG:?RELEASE_TAG is required}"
 : "${RELEASE_VERSION:?RELEASE_VERSION is required}"
 
@@ -21,7 +20,7 @@ if [ "$direct_status" -eq 0 ]; then
     echo "Remote tag list and exact tag lookup disagree." >&2
     exit 1
   fi
-elif [ "$direct_status" -eq 2 ] && [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+elif [ "$direct_status" -eq 2 ]; then
   if [ -n "$listed" ]; then
     echo "Remote tag list and exact tag lookup disagree." >&2
     exit 1
@@ -31,11 +30,7 @@ elif [ "$direct_status" -eq 2 ] && [ "$EVENT_NAME" = "workflow_dispatch" ]; then
   git tag --annotate "$RELEASE_TAG" --message "Orrery $RELEASE_VERSION"
   git push origin "$ref"
 else
-  if [ "$direct_status" -eq 2 ]; then
-    echo "Remote tag $RELEASE_TAG is missing." >&2
-  else
-    echo "Exact remote tag lookup failed." >&2
-  fi
+  echo "Exact remote tag lookup failed." >&2
   exit 1
 fi
 
@@ -44,7 +39,7 @@ if [ "$(git cat-file -t "$RELEASE_TAG")" != tag ]; then
   echo "Remote tag $RELEASE_TAG must be annotated." >&2
   exit 1
 fi
-if [ "$(git rev-list --max-count=1 "$RELEASE_TAG")" != "$GITHUB_SHA" ]; then
+if [ "$(git rev-list --max-count=1 "$RELEASE_TAG")" != "$EXPECTED_SHA" ]; then
   echo "Remote tag $RELEASE_TAG points to a different commit." >&2
   exit 1
 fi

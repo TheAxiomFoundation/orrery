@@ -2,15 +2,11 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'changelog.d/**'
   workflow_dispatch:
-    inputs:
-      publish:
-        description: Create the version tag and publish after validation
-        required: true
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -21,15 +17,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  versioning:
     runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.release.outputs.release }}
+      commit_sha: ${{ steps.release.outputs.commit_sha }}
+      tag: ${{ steps.release.outputs.tag }}
+      name: ${{ steps.release.outputs.name }}
+      version: ${{ steps.release.outputs.version }}
+      npm_tag: ${{ steps.release.outputs.npm_tag }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+      asset: ${{ steps.release.outputs.asset }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: '0.12.23'
+          enable-cache: false
+      - name: Update the version and changelog
+        id: release
+        run: .github/scripts/release/prepare.sh
+
+  publish:
+    needs: versioning
+    if: needs.versioning.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.versioning.outputs.commit_sha }}
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
       - uses: oven-sh/setup-bun@v2
         with:
@@ -39,18 +68,10 @@ jobs:
           python-version: '3.12'
       - name: Use the reviewed npm client
         run: npm install --global npm@11.5.1
-      - name: Resolve and validate release identity
-        id: release
+      - name: Require the generated release commit
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          GIT_REF: ${{ github.ref }}
-          REF_NAME: ${{ github.ref_name }}
-          REQUESTED_PUBLISH: ${{ inputs.publish }}
-        run: .github/scripts/release/resolve.sh
-      - name: Require a publishable commit from main
-        if: steps.release.outputs.publish == 'true'
-        env:
-          EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_SHA: ${{ needs.versioning.outputs.commit_sha }}
+          RELEASE_TAG: ${{ needs.versioning.outputs.tag }}
         run: .github/scripts/release/require-main-commit.sh
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
@@ -60,37 +81,35 @@ jobs:
       - run: bun run check:dist
       - name: Pack and validate the public archive
         env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_ASSET: ${{ steps.release.outputs.asset }}
+          RELEASE_TAG: ${{ needs.versioning.outputs.tag }}
+          RELEASE_ASSET: ${{ needs.versioning.outputs.asset }}
         run: .github/scripts/release/pack.sh
       - uses: actions/upload-artifact@v7
         with:
-          name: orrery-${{ steps.release.outputs.version }}
+          name: orrery-${{ needs.versioning.outputs.version }}
           path: |
-            release/${{ steps.release.outputs.asset }}
+            release/${{ needs.versioning.outputs.asset }}
             release/SHA256SUMS
           if-no-files-found: error
       - name: Create or verify the annotated version tag
-        if: steps.release.outputs.publish == 'true'
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          EXPECTED_SHA: ${{ needs.versioning.outputs.commit_sha }}
+          RELEASE_TAG: ${{ needs.versioning.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.versioning.outputs.version }}
         run: .github/scripts/release/tag.sh
       - name: Publish or verify the npm package
-        if: steps.release.outputs.publish == 'true'
         env:
-          PACKAGE_NAME: ${{ steps.release.outputs.name }}
-          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
-          NPM_TAG: ${{ steps.release.outputs.npm_tag }}
-          RELEASE_ASSET: ${{ steps.release.outputs.asset }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PACKAGE_NAME: ${{ needs.versioning.outputs.name }}
+          PACKAGE_VERSION: ${{ needs.versioning.outputs.version }}
+          NPM_TAG: ${{ needs.versioning.outputs.npm_tag }}
+          RELEASE_ASSET: ${{ needs.versioning.outputs.asset }}
         run: .github/scripts/release/publish-npm.sh
       - name: Create or verify the GitHub release
-        if: steps.release.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          RELEASE_ASSET: ${{ steps.release.outputs.asset }}
-          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+          RELEASE_TAG: ${{ needs.versioning.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.versioning.outputs.version }}
+          RELEASE_ASSET: ${{ needs.versioning.outputs.asset }}
+          PRERELEASE: ${{ needs.versioning.outputs.prerelease }}
         run: .github/scripts/release/publish-github.sh

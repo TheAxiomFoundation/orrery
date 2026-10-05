@@ -175,7 +175,7 @@ describe('release planning', () => {
     ).toMatchObject({ version: '2.0.0', increment: 'major' });
   });
 
-  test('sorts fragments and rejects missing, malformed, or prerelease input', () => {
+  test('sorts fragments, finalizes prereleases, and rejects invalid input', () => {
     expect(
       planRelease(packageJson, ['z.fixed.md', 'a.changed.md']).fragments,
     ).toEqual(['a.changed.md', 'z.fixed.md']);
@@ -183,12 +183,20 @@ describe('release planning', () => {
     expect(() => planRelease(packageJson, ['23.notes.md'])).toThrow(
       'must end in',
     );
-    expect(() =>
+    expect(
       planRelease(
         { ...packageJson, version: '2.0.0-preview.1' },
         ['23.fixed.md'],
       ),
-    ).toThrow('stable semantic version');
+    ).toMatchObject({
+      currentVersion: '2.0.0-preview.1',
+      version: '2.0.0',
+      tag: 'v2.0.0',
+      increment: 'stable',
+    });
+    expect(() =>
+      planRelease({ ...packageJson, version: 'next' }, ['23.fixed.md']),
+    ).toThrow('semantic version');
   });
 });
 

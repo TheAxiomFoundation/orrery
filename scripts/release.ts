@@ -28,7 +28,7 @@ const CHANGE_TYPES = [
 const CHANGELOG_HEADING = /^## \[([^\]]+)] - (\d{4}-\d{2}-\d{2})$/m;
 
 type ChangeType = (typeof CHANGE_TYPES)[number];
-export type VersionIncrement = 'major' | 'minor' | 'patch';
+export type VersionIncrement = 'major' | 'minor' | 'patch' | 'stable';
 
 export interface ReleaseMetadata {
   name: string;
@@ -85,14 +85,18 @@ function nextStableVersion(
   increment: VersionIncrement,
 ): string {
   const match = SEMVER.exec(version);
-  if (match === null || match[4] !== undefined) {
-    throw new Error(
-      `automated release preparation requires a stable semantic version, received ${version}`,
-    );
+  if (match === null) {
+    throw new Error(`automated release preparation requires a semantic version, received ${version}`);
   }
   const major = BigInt(match[1]);
   const minor = BigInt(match[2]);
   const patch = BigInt(match[3]);
+  if (increment === 'stable') {
+    if (match[4] === undefined) {
+      throw new Error(`cannot finalize stable package version ${version}`);
+    }
+    return `${major}.${minor}.${patch}`;
+  }
   if (increment === 'major') return `${major + 1n}.0.0`;
   if (increment === 'minor') return `${major}.${minor + 1n}.0`;
   return `${major}.${minor}.${patch + 1n}`;
@@ -117,11 +121,19 @@ export function planRelease(
   if (types.length === 0) {
     throw new Error('release preparation requires at least one changelog fragment');
   }
-  const increment: VersionIncrement = types.includes('breaking')
+  const inferredIncrement: VersionIncrement = types.includes('breaking')
     ? 'major'
     : types.includes('added') || types.includes('removed')
       ? 'minor'
       : 'patch';
+  const versionMatch = SEMVER.exec(currentVersion);
+  if (versionMatch === null) {
+    throw new Error(
+      `automated release preparation requires a semantic version, received ${currentVersion}`,
+    );
+  }
+  const increment: VersionIncrement =
+    versionMatch[4] === undefined ? inferredIncrement : 'stable';
   const version = nextStableVersion(currentVersion, increment);
   const tag = `v${version}`;
   releaseMetadata({ ...packageJson, version }, tag);
@@ -331,6 +343,14 @@ async function main(args: string[]): Promise<void> {
   const packageJson = await readJson(packagePath, 'package.json');
   const fragmentDirectory =
     option(args, '--fragments') ?? `${root}changelog.d`;
+  if (command === 'current') {
+    const packageObject = object(packageJson, 'package.json');
+    const version = text(packageObject.version, 'package.json version');
+    process.stdout.write(
+      `${JSON.stringify(releaseMetadata(packageJson, `v${version}`))}\n`,
+    );
+    return;
+  }
   if (command === 'plan') {
     const plan = planRelease(
       packageJson,
@@ -376,7 +396,7 @@ async function main(args: string[]): Promise<void> {
     return;
   }
   throw new Error(
-    'command must be metadata, plan, notes, validate-changelog, or validate-pack',
+    'command must be current, metadata, plan, notes, validate-changelog, or validate-pack',
   );
 }
 

@@ -1,9 +1,8 @@
 # Releasing Orrery
 
-Orrery releases use one version for the Git tag, npm package, and GitHub
-release. A stable `package.json` version uses a matching `v`-prefixed tag and
-the npm `latest` distribution tag. A semantic prerelease uses its matching
-`v`-prefixed tag and the npm `preview` distribution tag.
+Orrery publishes automatically after a pull request containing changelog
+fragments merges into `main`. The release uses one version for the annotated
+Git tag, npm package, and GitHub release.
 
 ## Changelog fragments
 
@@ -17,66 +16,50 @@ request number followed by one of these suffixes:
 - `.fixed.md` for a correction; or
 - `.removed.md` for removed behavior.
 
-CI uses Towncrier 26.9.0 to render the pending fragments and checks pull
-requests for either a fragment or a compiled release changelog. Ordinary pull
-requests do not edit `CHANGELOG.md` directly.
+CI renders the pending fragments with Towncrier and requires each pull request
+to supply a valid fragment. Ordinary pull requests do not edit `CHANGELOG.md`
+or change the package version directly.
 
-## Prepare a release
+## Automated publication
 
-Run the **Prepare release** workflow from `main` after the changes intended for
-a release have merged. The workflow:
+When changelog fragments reach `main`, the **Release** workflow:
 
-1. inspects every pending fragment;
-2. chooses a major increment for `.breaking.md`, a minor increment for
-   `.added.md` or `.removed.md`, and a patch increment for only `.changed.md`
-   or `.fixed.md` fragments;
-3. updates `package.json`;
-4. compiles the fragments into a dated `CHANGELOG.md` entry; and
-5. opens `release/vX.Y.Z` as a pull request and explicitly starts CI for its
-   commit.
+1. verifies that it is processing the current `main` commit;
+2. determines the next semantic version from all pending fragments;
+3. updates `package.json` and compiles the fragments into `CHANGELOG.md`;
+4. commits the generated files to `main` with the message `Update package version`;
+5. checks out that exact generated commit and runs the type checks, tests, and
+   distribution validation;
+6. creates an annotated `vX.Y.Z` tag for that commit;
+7. publishes the package to npm with provenance; and
+8. creates the matching GitHub release with the Towncrier notes, package
+   archive, and checksums.
 
-The repository setting **Allow GitHub Actions to create and approve pull
-requests** must be enabled before the first run. The workflow uses the
-repository's short-lived GitHub Actions credential; it does not require a
-stored personal access token.
+The first stable release finalizes the semantic prerelease already stored in
+`package.json`. After that, `.breaking.md` selects a major increment,
+`.added.md` or `.removed.md` selects a minor increment, and releases containing
+only `.changed.md` or `.fixed.md` select a patch increment.
 
-Review and merge that pull request normally. The release commit must be the
-current `main` commit before publication.
+The workflow is safe to retry from the generated `Update package version`
+commit. If the exact npm version or GitHub release already exists, it verifies
+the published archive, release notes, and asset digests instead of replacing
+them. A newer `main` commit causes an older queued run to stop; the newer run
+includes all pending fragments.
 
-## Build or publish
+## npm authentication
 
-Run the **Release** workflow from `main`. Leave **publish** disabled to build,
-validate, and retain the exact archive without changing npm or GitHub. Enable
-**publish** to perform the same checks, create and push the annotated `vX.Y.Z`
-tag at the reviewed `main` commit, publish the archive to npm, and create the
-matching GitHub release.
+Configure npm trusted publishing for repository `TheAxiomFoundation/orrery`
+and workflow `release.yml`, and allow the trusted publisher to run
+`npm publish`. Publication then uses GitHub's short-lived OpenID Connect
+identity and npm provenance without storing an npm token.
 
-The workflow checks the version/tag relationship, compiled changelog, package
-contents, tests, type checking, Python checks, distribution build, and
-self-contained exporter before creating the tag. It refuses to move an
-existing tag or publish from a commit other than the current `main` commit. A
-manually pushed matching tag also starts the same publication workflow, but
-the normal path is the reviewed workflow run.
-
-For the first npm publication only:
-
-1. Run the Release workflow from `main` with **publish** disabled.
-2. Download the archive produced by that workflow.
-3. Publish that exact archive from an npm account with two-factor
-   authentication: `npm publish <archive> --access public --tag latest`.
-4. Configure npm trusted publishing for
-   `TheAxiomFoundation/orrery`, workflow `release.yml`, environment empty.
-5. Remove any temporary npm automation token used during setup.
-6. Run the Release workflow again from `main` with **publish** enabled. It
-   creates the matching version tag, verifies that npm contains the same
-   archive, and creates the GitHub release.
-
-Publication uses npm trusted publishing with provenance. If that exact npm
-version already exists, the workflow compares the registry integrity value
-with the locally built archive and refuses a mismatch. It also creates the
-GitHub release with the latest Towncrier section as its release notes, the same
-archive, and a `SHA256SUMS` file. A repeated run verifies the existing notes
-and asset digests and refuses to replace them.
+For the first publication, before package settings exist for trusted
+publishing, add an Actions secret named `NPM_TOKEN` containing a granular npm
+token with permission to publish the scoped package and bypass two-factor
+authentication. The same automated workflow uses it for the initial
+publication. Then configure trusted publishing, remove the secret, and revoke
+the initial token.
 
 Do not move a published tag, replace release assets, or reuse a published
-version. Use a new release pull request and version for every release.
+version. Correct a released package with a new pull request, changelog fragment,
+and version.

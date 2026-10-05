@@ -35,11 +35,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
-          HEAD_REF: ${{ github.head_ref }}
         run: .github/scripts/ci/validate-changelog.sh
-      - name: Validate a compiled release changelog
-        if: startsWith(github.ref, 'refs/heads/release/v') || startsWith(github.head_ref, 'release/v')
-        run: .github/scripts/ci/validate-release-changelog.sh
       - run: bun run typecheck
       - run: bun test
       - run: python3 -m unittest discover -s tests -p '*_test.py'

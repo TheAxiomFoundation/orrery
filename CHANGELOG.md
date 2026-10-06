@@ -4,6 +4,13 @@ All notable changes to Orrery will be documented here.
 
 <!-- towncrier release notes start -->
 
+## [0.6.1] - 2026-10-06
+
+### Fixed
+
+- Use the established Axiom Towncrier versioning sequence, publish the generated npm archive as a local file, and allow the tested preview to deploy when `main` differs only by generated release metadata.
+
+
 ## [0.6.0] - 2026-10-06
 
 ### Added

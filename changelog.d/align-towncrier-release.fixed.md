@@ -1,1 +1,0 @@
-Use the established Axiom Towncrier versioning sequence, publish the generated npm archive as a local file, and allow the tested preview to deploy when `main` differs only by generated release metadata.

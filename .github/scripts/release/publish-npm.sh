@@ -50,7 +50,7 @@ else
     echo "npm list and exact-version lookup disagree" >&2
     exit 1
   fi
-  npm publish "release/$RELEASE_ASSET" \
+  npm publish "./release/$RELEASE_ASSET" \
     --access public \
     --tag "$NPM_TAG" \
     --provenance

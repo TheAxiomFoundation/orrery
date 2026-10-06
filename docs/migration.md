@@ -5,12 +5,18 @@ PlanGraph and Thesis retain their names and own their domain models.
 
 The repository is now [TheAxiomFoundation/orrery](https://github.com/TheAxiomFoundation/orrery).
 The package name is `@axiom-foundation/orrery`; the primary command is `orrery`.
-Install the identified archive from a [GitHub release](https://github.com/TheAxiomFoundation/orrery/releases).
-Do not assume a registry version exists before it is published.
+Install the stable package from npm:
 
 ```sh
-npm install https://github.com/TheAxiomFoundation/orrery/releases/download/v0.5.0-preview.2/axiom-foundation-orrery-0.5.0-preview.2.tgz
+npm install @axiom-foundation/orrery
 npx orrery --input graph.json --output report.html
+```
+
+For an offline installation, use the archive attached to the matching
+[GitHub release](https://github.com/TheAxiomFoundation/orrery/releases):
+
+```sh
+npm install /path/to/axiom-foundation-orrery-VERSION.tgz
 ```
 
 ## React
@@ -36,13 +42,11 @@ the new archive explicitly:
 ```json
 {
   "dependencies": {
-    "@axiom-foundation/graph-explorer": "https://github.com/TheAxiomFoundation/orrery/releases/download/v0.5.0-preview.2/axiom-foundation-orrery-0.5.0-preview.2.tgz"
+    "@axiom-foundation/graph-explorer": "npm:@axiom-foundation/orrery@latest"
   }
 }
 ```
 
-After a registry publication, an npm alias is another option:
-`"@axiom-foundation/graph-explorer": "npm:@axiom-foundation/orrery@0.5.0-preview.2"`.
 The package also retains `graph-explorer` as a CLI alias. An old package name is
 not automatically redirected by npm; choose the dependency alias explicitly.
 
@@ -53,6 +57,5 @@ Keep `graph-explorer/v1`, `graph-explorer/receipt-binding/v1` and
 bindings and offline reports remain valid. The embedded `graph-explorer-data`
 element remains supported. Historical archives and their digests are immutable.
 
-The preview incorporates the MIT license change proposed in repository PR #2.
-Earlier archives retain their original license; bundled dependency notices are
-preserved independently.
+Orrery uses the MIT license. Historical archives retain their original license;
+bundled dependency notices are preserved independently.

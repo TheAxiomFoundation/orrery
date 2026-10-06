@@ -9,9 +9,13 @@
     "url": "https://github.com/TheAxiomFoundation/orrery.git"
   },
   "homepage": "https://theaxiomfoundation.github.io/orrery/",
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES",
     "docs",

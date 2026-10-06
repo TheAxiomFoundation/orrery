@@ -24,10 +24,12 @@ or change the package version directly.
 
 When changelog fragments reach `main`, the **Release** workflow:
 
-1. verifies that it is processing the current `main` commit;
-2. determines the next semantic version from all pending fragments;
-3. updates `package.json` and compiles the fragments into `CHANGELOG.md`;
-4. commits the generated files to `main` with the message `Update package version`;
+1. runs `.github/bump_version.py` to determine the next semantic version from
+   all pending fragments and update `package.json`;
+2. compiles the fragments into `CHANGELOG.md` with Towncrier;
+3. uses `EndBug/add-and-commit` to commit the generated files to `main` with
+   the message `Update package version`;
+4. starts publication only when that action reports that it created the commit;
 5. checks out that exact generated commit and runs the type checks, tests, and
    distribution validation;
 6. creates an annotated `vX.Y.Z` tag for that commit;
@@ -35,16 +37,14 @@ When changelog fragments reach `main`, the **Release** workflow:
 8. creates the matching GitHub release with the Towncrier notes, package
    archive, and checksums.
 
-The first stable release finalizes the semantic prerelease already stored in
-`package.json`. After that, `.breaking.md` selects a major increment,
-`.added.md` or `.removed.md` selects a minor increment, and releases containing
-only `.changed.md` or `.fixed.md` select a patch increment.
+`.breaking.md` selects a major increment, `.added.md` or `.removed.md` selects
+a minor increment, and releases containing only `.changed.md` or `.fixed.md`
+select a patch increment.
 
-The workflow is safe to retry from the generated `Update package version`
-commit. If the exact npm version or GitHub release already exists, it verifies
-the published archive, release notes, and asset digests instead of replacing
-them. A newer `main` commit causes an older queued run to stop; the newer run
-includes all pending fragments.
+If a publication step fails after versioning succeeds, rerun the failed
+publication job. If the exact npm version or GitHub release already exists,
+the job verifies the published archive, release notes, and asset digests
+instead of replacing them.
 
 ## npm authentication
 

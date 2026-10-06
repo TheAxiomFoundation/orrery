@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   changelogReleaseNotes,
-  planRelease,
   releaseMetadata,
   validateChangelog,
   validatePackResult,
@@ -156,47 +155,6 @@ describe('packed release validation', () => {
         },
       ]),
     ).toThrow('unsafe');
-  });
-});
-
-describe('release planning', () => {
-  test('selects the largest semantic-version increment required by fragments', () => {
-    expect(planRelease(packageJson, ['23.fixed.md'])).toMatchObject({
-      currentVersion: STABLE_VERSION,
-      version: '1.2.4',
-      tag: 'v1.2.4',
-      increment: 'patch',
-    });
-    expect(
-      planRelease(packageJson, ['24.fixed.md', '25.added.md']),
-    ).toMatchObject({ version: '1.3.0', increment: 'minor' });
-    expect(
-      planRelease(packageJson, ['26.added.md', '27.breaking.md']),
-    ).toMatchObject({ version: '2.0.0', increment: 'major' });
-  });
-
-  test('sorts fragments, finalizes prereleases, and rejects invalid input', () => {
-    expect(
-      planRelease(packageJson, ['z.fixed.md', 'a.changed.md']).fragments,
-    ).toEqual(['a.changed.md', 'z.fixed.md']);
-    expect(() => planRelease(packageJson, [])).toThrow('at least one');
-    expect(() => planRelease(packageJson, ['23.notes.md'])).toThrow(
-      'must end in',
-    );
-    expect(
-      planRelease(
-        { ...packageJson, version: '2.0.0-preview.1' },
-        ['23.fixed.md'],
-      ),
-    ).toMatchObject({
-      currentVersion: '2.0.0-preview.1',
-      version: '2.0.0',
-      tag: 'v2.0.0',
-      increment: 'stable',
-    });
-    expect(() =>
-      planRelease({ ...packageJson, version: 'next' }, ['23.fixed.md']),
-    ).toThrow('semantic version');
   });
 });
 

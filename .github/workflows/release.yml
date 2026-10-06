@@ -17,17 +17,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  versioning:
+  Versioning:
+    if: github.event.head_commit.message != 'Update package version'
     runs-on: ubuntu-latest
     outputs:
-      release: ${{ steps.release.outputs.release }}
-      commit_sha: ${{ steps.release.outputs.commit_sha }}
-      tag: ${{ steps.release.outputs.tag }}
-      name: ${{ steps.release.outputs.name }}
-      version: ${{ steps.release.outputs.version }}
-      npm_tag: ${{ steps.release.outputs.npm_tag }}
-      prerelease: ${{ steps.release.outputs.prerelease }}
-      asset: ${{ steps.release.outputs.asset }}
+      committed: ${{ steps.commit.outputs.committed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,18 +36,23 @@ jobs:
         with:
           version: '0.12.23'
           enable-cache: false
-      - name: Update the version and changelog
-        id: release
-        run: .github/scripts/release/prepare.sh
+      - name: Bump version and build changelog
+        run: .github/scripts/release/build-changelog.sh
+      - name: Update package version
+        id: commit
+        uses: EndBug/add-and-commit@v10
+        with:
+          add: '.'
+          message: Update package version
 
-  publish:
-    needs: versioning
-    if: needs.versioning.outputs.release == 'true'
+  Publish:
+    needs: Versioning
+    if: needs.Versioning.outputs.committed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.versioning.outputs.commit_sha }}
+          ref: main
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
@@ -68,10 +67,13 @@ jobs:
           python-version: '3.12'
       - name: Use the reviewed npm client
         run: npm install --global npm@11.5.1
+      - name: Read generated release metadata
+        id: release
+        run: .github/scripts/release/capture-metadata.sh
       - name: Require the generated release commit
         env:
-          EXPECTED_SHA: ${{ needs.versioning.outputs.commit_sha }}
-          RELEASE_TAG: ${{ needs.versioning.outputs.tag }}
+          EXPECTED_SHA: ${{ steps.release.outputs.commit_sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: .github/scripts/release/require-main-commit.sh
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
@@ -81,35 +83,35 @@ jobs:
       - run: bun run check:dist
       - name: Pack and validate the public archive
         env:
-          RELEASE_TAG: ${{ needs.versioning.outputs.tag }}
-          RELEASE_ASSET: ${{ needs.versioning.outputs.asset }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_ASSET: ${{ steps.release.outputs.asset }}
         run: .github/scripts/release/pack.sh
       - uses: actions/upload-artifact@v7
         with:
-          name: orrery-${{ needs.versioning.outputs.version }}
+          name: orrery-${{ steps.release.outputs.version }}
           path: |
-            release/${{ needs.versioning.outputs.asset }}
+            release/${{ steps.release.outputs.asset }}
             release/SHA256SUMS
           if-no-files-found: error
       - name: Create or verify the annotated version tag
         env:
-          EXPECTED_SHA: ${{ needs.versioning.outputs.commit_sha }}
-          RELEASE_TAG: ${{ needs.versioning.outputs.tag }}
-          RELEASE_VERSION: ${{ needs.versioning.outputs.version }}
+          EXPECTED_SHA: ${{ steps.release.outputs.commit_sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: .github/scripts/release/tag.sh
       - name: Publish or verify the npm package
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          PACKAGE_NAME: ${{ needs.versioning.outputs.name }}
-          PACKAGE_VERSION: ${{ needs.versioning.outputs.version }}
-          NPM_TAG: ${{ needs.versioning.outputs.npm_tag }}
-          RELEASE_ASSET: ${{ needs.versioning.outputs.asset }}
+          PACKAGE_NAME: ${{ steps.release.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.release.outputs.version }}
+          NPM_TAG: ${{ steps.release.outputs.npm_tag }}
+          RELEASE_ASSET: ${{ steps.release.outputs.asset }}
         run: .github/scripts/release/publish-npm.sh
       - name: Create or verify the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.versioning.outputs.tag }}
-          RELEASE_VERSION: ${{ needs.versioning.outputs.version }}
-          RELEASE_ASSET: ${{ needs.versioning.outputs.asset }}
-          PRERELEASE: ${{ needs.versioning.outputs.prerelease }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_ASSET: ${{ steps.release.outputs.asset }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: .github/scripts/release/publish-github.sh

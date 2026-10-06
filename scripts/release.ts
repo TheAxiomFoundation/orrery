@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,17 +18,7 @@ const REQUIRED_FILES = [
 ] as const;
 const SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
-const CHANGE_TYPES = [
-  'breaking',
-  'added',
-  'changed',
-  'fixed',
-  'removed',
-] as const;
 const CHANGELOG_HEADING = /^## \[([^\]]+)] - (\d{4}-\d{2}-\d{2})$/m;
-
-type ChangeType = (typeof CHANGE_TYPES)[number];
-export type VersionIncrement = 'major' | 'minor' | 'patch' | 'stable';
 
 export interface ReleaseMetadata {
   name: string;
@@ -42,14 +32,6 @@ export interface ReleaseMetadata {
 export interface ValidatedPackResult {
   integrity: string;
   files: string[];
-}
-
-export interface ReleasePlan {
-  currentVersion: string;
-  version: string;
-  tag: string;
-  increment: VersionIncrement;
-  fragments: string[];
 }
 
 type JsonObject = Record<string, unknown>;
@@ -74,76 +56,6 @@ function packageFileEntries(packageJson: JsonObject): string[] {
     throw new Error('package.json files must be a nonempty array');
   }
   return files.map((value, index) => text(value, `package.json files[${index}]`));
-}
-
-function changeType(path: string): ChangeType | undefined {
-  return CHANGE_TYPES.find(type => path.endsWith(`.${type}.md`));
-}
-
-function nextStableVersion(
-  version: string,
-  increment: VersionIncrement,
-): string {
-  const match = SEMVER.exec(version);
-  if (match === null) {
-    throw new Error(`automated release preparation requires a semantic version, received ${version}`);
-  }
-  const major = BigInt(match[1]);
-  const minor = BigInt(match[2]);
-  const patch = BigInt(match[3]);
-  if (increment === 'stable') {
-    if (match[4] === undefined) {
-      throw new Error(`cannot finalize stable package version ${version}`);
-    }
-    return `${major}.${minor}.${patch}`;
-  }
-  if (increment === 'major') return `${major + 1n}.0.0`;
-  if (increment === 'minor') return `${major}.${minor + 1n}.0`;
-  return `${major}.${minor}.${patch + 1n}`;
-}
-
-export function planRelease(
-  packageValue: unknown,
-  fragmentPaths: string[],
-): ReleasePlan {
-  const packageJson = object(packageValue, 'package.json');
-  const currentVersion = text(packageJson.version, 'package.json version');
-  const fragments = [...fragmentPaths].sort();
-  const types = fragments.map(path => {
-    const type = changeType(path);
-    if (type === undefined) {
-      throw new Error(
-        `changelog fragment ${path} must end in ${CHANGE_TYPES.map(value => `.${value}.md`).join(', ')}`,
-      );
-    }
-    return type;
-  });
-  if (types.length === 0) {
-    throw new Error('release preparation requires at least one changelog fragment');
-  }
-  const inferredIncrement: VersionIncrement = types.includes('breaking')
-    ? 'major'
-    : types.includes('added') || types.includes('removed')
-      ? 'minor'
-      : 'patch';
-  const versionMatch = SEMVER.exec(currentVersion);
-  if (versionMatch === null) {
-    throw new Error(
-      `automated release preparation requires a semantic version, received ${currentVersion}`,
-    );
-  }
-  const increment: VersionIncrement =
-    versionMatch[4] === undefined ? inferredIncrement : 'stable';
-  const version = nextStableVersion(currentVersion, increment);
-  const tag = `v${version}`;
-  releaseMetadata({ ...packageJson, version }, tag);
-  return {
-    currentVersion,
-    version,
-    tag,
-    increment,
-    fragments,
-  };
 }
 
 export function validateChangelog(
@@ -351,19 +263,6 @@ async function main(args: string[]): Promise<void> {
     );
     return;
   }
-  if (command === 'plan') {
-    const plan = planRelease(
-      packageJson,
-      await changelogFragments(fragmentDirectory),
-    );
-    if (args.includes('--write')) {
-      const packageObject = object(packageJson, 'package.json');
-      packageObject.version = plan.version;
-      await writeFile(packagePath, `${JSON.stringify(packageObject, null, 2)}\n`);
-    }
-    process.stdout.write(`${JSON.stringify(plan)}\n`);
-    return;
-  }
   const tag = option(args, '--tag');
   if (tag === undefined) throw new Error('--tag is required');
   const metadata = releaseMetadata(packageJson, tag);
@@ -396,7 +295,7 @@ async function main(args: string[]): Promise<void> {
     return;
   }
   throw new Error(
-    'command must be current, metadata, plan, notes, validate-changelog, or validate-pack',
+    'command must be current, metadata, notes, validate-changelog, or validate-pack',
   );
 }
 

@@ -6,13 +6,6 @@ set -euo pipefail
 : "${PACKAGE_VERSION:?PACKAGE_VERSION is required}"
 : "${RELEASE_ASSET:?RELEASE_ASSET is required}"
 
-if [ -n "${NPM_TOKEN:-}" ]; then
-  : "${RUNNER_TEMP:?RUNNER_TEMP is required when NPM_TOKEN is configured}"
-  npm_config="$RUNNER_TEMP/orrery-npmrc"
-  printf '%s\n' "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > "$npm_config"
-  export NPM_CONFIG_USERCONFIG="$npm_config"
-fi
-
 set +e
 npm view "$PACKAGE_NAME" versions --json > registry-versions.json 2> registry-list.error
 list_status=$?

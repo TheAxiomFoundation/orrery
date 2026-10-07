@@ -104,6 +104,20 @@ printf '%s\\n' "$@" > "$NPM_CAPTURE"
                 ],
             )
 
+    def test_release_uses_only_oidc_trusted_publishing(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        publish_script = (
+            ROOT / ".github/scripts/release/publish-npm.sh"
+        ).read_text()
+        release_docs = (ROOT / "docs/releasing.md").read_text()
+
+        self.assertIn("id-token: write", workflow)
+        self.assertIn("runs-on: ubuntu-latest", workflow)
+        self.assertIn("npm@11.5.1", workflow)
+        self.assertNotIn("NPM_TOKEN", workflow)
+        self.assertNotIn("NPM_TOKEN", publish_script)
+        self.assertNotIn("NPM_TOKEN", release_docs)
+
     def test_page_selection_accepts_the_exact_tested_revision(self):
         self.assertEqual(
             self.run_page_selection("tested", "tested"),

@@ -101,7 +101,6 @@ jobs:
         run: .github/scripts/release/tag.sh
       - name: Publish or verify the npm package
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PACKAGE_NAME: ${{ steps.release.outputs.name }}
           PACKAGE_VERSION: ${{ steps.release.outputs.version }}
           NPM_TAG: ${{ steps.release.outputs.npm_tag }}

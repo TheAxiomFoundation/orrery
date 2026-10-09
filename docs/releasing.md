@@ -53,12 +53,14 @@ and workflow `release.yml`, and allow the trusted publisher to run
 `npm publish`. Publication then uses GitHub's short-lived OpenID Connect
 identity and npm provenance without storing an npm token.
 
-For the first publication, before package settings exist for trusted
-publishing, add an Actions secret named `NPM_TOKEN` containing a granular npm
-token with permission to publish the scoped package and bypass two-factor
-authentication. The same automated workflow uses it for the initial
-publication. Then configure trusted publishing, remove the secret, and revoke
-the initial token.
+The workflow runs on a GitHub-hosted runner, grants `id-token: write`, and uses
+an npm client that supports trusted publishing. It does not accept a traditional
+publishing token. Confirm the trusted-publisher configuration before merging a
+change with a changelog fragment; npm validates the repository, workflow
+filename, and direct-publication permission only when publication is attempted.
+
+Restrict traditional token-based publication in the npm package settings. Do
+not store an npm publishing token in GitHub Actions secrets.
 
 Do not move a published tag, replace release assets, or reuse a published
 version. Correct a released package with a new pull request, changelog fragment,

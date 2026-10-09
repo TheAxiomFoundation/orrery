@@ -4,6 +4,13 @@ All notable changes to Orrery will be documented here.
 
 <!-- towncrier release notes start -->
 
+## [0.6.2] - 2026-10-09
+
+### Fixed
+
+- Remove the initial npm-token publication path so releases authenticate only through npm trusted publishing.
+
+
 ## [0.6.1] - 2026-10-06
 
 ### Fixed
